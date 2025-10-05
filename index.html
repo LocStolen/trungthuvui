@@ -1,0 +1,385 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Trung Thu – Lì xì & Tài xỉu • Trăng mọc • Đèn & Pháo</title>
+<style>
+  :root{
+    --bg:#07060a;
+    --pink:#ffa1cf;
+    --gold:#ffd769;
+    --earth:#2b1c14;
+    --pastel-blue:#80a8ff;
+    --pastel-yellow:#ffd97a;
+    --pastel-green:#9ae6b4;
+  }
+  html,body{height:100%;margin:0;background:var(--bg);overflow:hidden;font-family:'Segoe Script','Comic Sans MS',system-ui}
+  canvas{position:fixed;inset:0;display:block}
+  /* HUD buttons (top-right) */
+  .btns{position:fixed;right:12px;top:12px;display:flex;gap:.5rem;z-index:6}
+  .btn{appearance:none;border:none;border-radius:999px;padding:.6rem .9rem;font-weight:700;cursor:pointer;color:#1a1a1a;box-shadow:0 8px 24px rgba(0,0,0,.35);background:linear-gradient(180deg,var(--pastel-yellow),#ffcc5f)}
+  .btn.dice{background:linear-gradient(180deg,var(--pastel-blue),#7094ff)}
+  .btn:active{transform:translateY(1px)}
+  /* Wallet badge */
+  .wallet{position:fixed;left:12px;top:12px;color:#fff9;z-index:6;font-weight:700}
+  /* Lucky popup */
+  .lucky{position:fixed;inset:0;display:none;align-items:center;justify-content:center;z-index:8}
+  .bubble{background:radial-gradient(140px 90px at 50% 20%,rgba(255,217,120,.5),rgba(255,217,120,.08));border:1px solid rgba(255,217,120,.35);backdrop-filter:blur(6px);color:#fff;padding:16px 18px;border-radius:16px;box-shadow:0 12px 36px rgba(0,0,0,.5);text-align:center}
+  .bubble h3{margin:.2rem 0 .4rem 0;color:#ffe9a8}
+  /* Dice modal */
+  .modal{position:fixed;inset:0;background:rgba(0,0,0,.55);display:none;align-items:center;justify-content:center;z-index:7}
+  .card{background:#16131a;border-radius:18px;color:#fff;padding:18px 20px;min-width:320px;max-width:92vw;text-align:center;box-shadow:0 14px 34px rgba(0,0,0,.45)}
+  .row{display:flex;justify-content:center;gap:10px;flex-wrap:wrap}
+  .field{display:flex;gap:8px;justify-content:center;align-items:center;margin:8px 0}
+  .field input{background:#211d27;border:1px solid #2a2330;border-radius:10px;color:#fff;padding:.45rem .6rem;min-width:120px}
+  .pill{border:none;border-radius:999px;padding:.45rem .7rem;font-weight:700;cursor:pointer}
+  .pill.primary{background:linear-gradient(180deg,var(--pastel-blue),#7094ff);color:#0c1020}
+  .pill.success{background:linear-gradient(180deg,var(--pastel-green),#69d39c);color:#0f2014}
+  .pill.warn{background:linear-gradient(180deg,var(--pastel-yellow),#ffcc5f);color:#302312}
+  .die{width:48px;height:48px;border-radius:12px;background:#f5f5f5;color:#111;display:grid;place-items:center;font-weight:800}
+</style>
+</head>
+<body>
+  <canvas id="scene"></canvas>
+
+  <div class="wallet" id="walletHUD">🥮 0</div>
+
+  <div class="btns">
+    <button id="btnLucky" class="btn">🧧 Rút lì xì</button>
+    <button id="btnDice" class="btn dice">🎲 Tài xỉu</button>
+  </div>
+
+  <!-- Lucky popup -->
+  <div class="lucky" id="luckyPopup">
+    <div class="bubble">
+      <h3>🧧 Lì xì Trung Thu</h3>
+      <div id="luckyText" style="margin-bottom:6px"></div>
+      <div id="luckyBonus" style="opacity:.9"></div>
+    </div>
+  </div>
+
+  <!-- Dice modal -->
+  <div class="modal" id="diceModal">
+    <div class="card">
+      <div style="font-weight:800;margin-bottom:6px">🎲 Tài xỉu Trung Thu</div>
+      <div id="walletView" style="opacity:.9;margin-bottom:6px">🥮 Bánh hiện có: <b>0</b></div>
+
+      <div class="field">
+        <input id="codeInput" placeholder="Nhập mã (locvippro)" />
+        <button class="pill success" id="applyCode">Nhận quà</button>
+      </div>
+
+      <div class="row" style="margin-top:6px">
+        <button class="pill warn" id="pickTai">Chọn Tài</button>
+        <button class="pill warn" id="pickXiu">Chọn Xỉu</button>
+      </div>
+
+      <div class="field">
+        <input id="betInput" type="number" min="1" value="100" />
+        <button class="pill primary" id="rollBtn">Quay xúc xắc 🎲</button>
+      </div>
+
+      <div class="row" style="margin:10px 0">
+        <div class="die" id="d1">–</div>
+        <div class="die" id="d2">–</div>
+        <div class="die" id="d3">–</div>
+      </div>
+      <div id="diceResult" style="min-height:24px;opacity:.95"></div>
+
+      <div class="row" style="margin-top:8px">
+        <button class="pill" id="closeDice">Đóng</button>
+      </div>
+    </div>
+  </div>
+
+<script>
+(() => {
+  const DPR = Math.min(2, window.devicePixelRatio||1);
+  const canvas = document.getElementById('scene');
+  const ctx = canvas.getContext('2d');
+  const W = ()=>innerWidth, H=()=>innerHeight;
+  function resize(){ canvas.width=W()*DPR; canvas.height=H()*DPR; canvas.style.width=W()+"px"; canvas.style.height=H()+"px"; ctx.setTransform(DPR,0,0,DPR,0,0);} addEventListener('resize',resize); resize();
+
+  // ===== Utilities
+  const R=(a,b)=>Math.random()*(b-a)+a, RI=(a,b)=>Math.floor(R(a,b+1)), clamp=(x,a,b)=>Math.max(a,Math.min(b,x));
+
+  // ===== WebAudio (no file) – pop + ambient
+  const audioCtx = new (window.AudioContext||window.webkitAudioContext)();
+  let unlocked = false;
+  function unlockAudio(){ if(!unlocked){ const o=audioCtx.createOscillator(); const g=audioCtx.createGain(); o.connect(g); g.connect(audioCtx.destination); g.gain.value=0; o.start(); setTimeout(()=>o.stop(),10); unlocked=true; } }
+  window.addEventListener('pointerdown', unlockAudio, {once:true});
+  function popSound(){
+    const o=audioCtx.createOscillator(), g=audioCtx.createGain();
+    o.type='triangle'; o.frequency.setValueAtTime(700, audioCtx.currentTime);
+    o.frequency.exponentialRampToValueAtTime(200, audioCtx.currentTime+0.12);
+    g.gain.setValueAtTime(0.15, audioCtx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime+0.15);
+    o.connect(g); g.connect(audioCtx.destination); o.start(); o.stop(audioCtx.currentTime+0.16);
+  }
+  // soft night ambience (very low)
+  const ambOsc = audioCtx.createOscillator(), ambGain = audioCtx.createGain();
+  ambOsc.type='sine'; ambOsc.frequency.value=220; ambGain.gain.value=0;
+  ambOsc.connect(ambGain); ambGain.connect(audioCtx.destination); ambOsc.start();
+  function startAmbient(){ ambGain.gain.linearRampToValueAtTime(0.02, audioCtx.currentTime+1); }
+
+  // ===== Wallet (localStorage)
+  const WALLET_KEY='moon_wallet_v2', CODE_KEY='moon_code_used_v2';
+  let wallet = parseInt(localStorage.getItem(WALLET_KEY)||'0',10);
+  function setWallet(v){ wallet = Math.max(0,v); localStorage.setItem(WALLET_KEY, String(wallet)); updateWallet(); }
+  function addWallet(n){ setWallet(wallet + n); }
+  function updateWallet(){ document.getElementById('walletView').innerHTML = `🥮 Bánh hiện có: <b>${wallet}</b>`; document.getElementById('walletHUD').textContent = `🥮 ${wallet}`; }
+  updateWallet();
+
+  // ===== Scene state
+  const state = {
+    scene:'intro',
+    t:0,
+    stars:[], fireflies:[],
+    particles:[],
+    cake:{x:()=>W()/2,y:()=>H()/2,r:110,pulse:0},
+    moon:{x:.78,r:120,k:0,riseDur:11,yStart:1.18,yEnd:.22},
+    lanterns:[],
+    banners:[],
+    kids:[], lions:[],
+    houses:[],
+    ground:{h:120},
+  };
+
+  // Sky seeds
+  for(let i=0;i<220;i++) state.stars.push({x:R(0,W()),y:R(0,H()),r:R(.3,1.3),seed:R(0,6.28)});
+  for(let i=0;i<42;i++) state.fireflies.push({x:R(0,W()),y:R(0,H()),a:R(0,6.28),s:R(.6,1.2)});
+
+  // Houses (drawn)
+  function spawnHouses(){
+    const baseY = H()-state.ground.h+2;
+    const xs=[120, 360, 620, W()-160];
+    xs.forEach((x,i)=>{
+      state.houses.push({
+        x, y: baseY-10-R(0,8),
+        w: RI(90,130), h: RI(60,80),
+        roof: i%2? '#ff6b5b':'#ff8a3f',
+        wall: '#3a2a22',
+        win:  '#ffd26e',
+        smoke: Math.random()<.6
+      });
+    });
+  }
+  spawnHouses();
+
+  // Kids walkers
+  function spawnKid(dir = Math.random()<.5?-1:1){
+    const y = H()-state.ground.h+6;
+    state.kids.push({x: dir<0? W()+R(30,120) : -R(30,120), y, dir, step:0, glow:0, speed:R(26,34)});
+  }
+  for(let i=0;i<2;i++) spawnKid(i%2?1:-1);
+
+  // Lions (simple blocky)
+  function spawnLion(){
+    const dir=Math.random()<.5?-1:1; const y=H()-state.ground.h+10;
+    state.lions.push({x: dir<0?W()+160:-160, y, dir, t:0, speed:R(58,72), glow:0});
+  }
+
+  // Banners text (sparse)
+  const LINES=[
+    'Trung thu ấm áp bên gia đình',
+    'Rước đèn phá cỗ vui thật vui',
+    'Bình an – May mắn – Hạnh phúc',
+    'Trăng tròn – lòng tròn – niềm vui tròn'
+  ];
+
+  // Lantern spawner (faster, sparse)
+  function spawnLantern(x=R(60,W()-60)){
+    if(state.lanterns.length>=6) return;
+    const s=R(.9,1.2);
+    state.lanterns.push({x, y:H()-state.ground.h+R(8,18), s, vy:R(-26,-20)*s, off:R(0,6.28), life:0, text:LINES[RI(0,LINES.length-1)]});
+  }
+  setInterval(()=>{ if(state.scene==='main' && state.moon.k>=1 && Math.random()<.18) spawnLantern(); }, 1200);
+  setInterval(()=>{ if(state.scene==='main' && Math.random()<.2 && state.lions.length<1) spawnLion(); }, 11000);
+
+  // ===== UI: Lucky & Dice
+  const luckyPopup=document.getElementById('luckyPopup');
+  const luckyText=document.getElementById('luckyText');
+  const luckyBonus=document.getElementById('luckyBonus');
+  document.getElementById('btnLucky').onclick=()=>{
+    const wishes=['Chúc Trung Thu ấm áp an vui ✨','Đoàn viên tròn đầy 🌕','Cười tươi như đèn lồng đỏ 🏮','Bình an – May mắn – Hạnh phúc ❤️'];
+    luckyText.textContent=wishes[RI(0,wishes.length-1)];
+    const bonus=RI(100,500); addWallet(bonus);
+    luckyBonus.textContent=`Bạn nhận +${bonus} 🥮`;
+    luckyPopup.style.display='flex';
+    setTimeout(()=>luckyPopup.style.display='none', 2800);
+  };
+
+  const diceModal=document.getElementById('diceModal');
+  const d1=document.getElementById('d1'), d2=document.getElementById('d2'), d3=document.getElementById('d3'), diceResult=document.getElementById('diceResult');
+  const codeInput=document.getElementById('codeInput'), betInput=document.getElementById('betInput');
+  const applyCode=document.getElementById('applyCode'), closeDice=document.getElementById('closeDice');
+  const pickTaiBtn=document.getElementById('pickTai'), pickXiuBtn=document.getElementById('pickXiu'); let pick=null;
+  function stylePick(){ pickTaiBtn.style.opacity = pick==='tai'?'1':'.75'; pickXiuBtn.style.opacity = pick==='xiu'?'1':'.75'; }
+  document.getElementById('btnDice').onclick=()=>{ diceModal.style.display='flex'; updateWallet(); };
+  closeDice.onclick=()=> diceModal.style.display='none';
+  pickTaiBtn.onclick=()=>{ pick='tai'; stylePick(); };
+  pickXiuBtn.onclick=()=>{ pick='xiu'; stylePick(); };
+  applyCode.onclick=()=>{
+    if(localStorage.getItem(CODE_KEY)==='1'){ diceResult.textContent='Mã đã dùng rồi nha!'; return; }
+    if((codeInput.value||'').trim().toLowerCase()==='locvippro'){
+      addWallet(10000); localStorage.setItem(CODE_KEY,'1'); codeInput.value=''; diceResult.textContent='Nhận +10000 🥮 thành công!';
+    } else diceResult.textContent='Mã không đúng rồi 😅';
+  };
+  document.getElementById('rollBtn').onclick=()=>{
+    const bet=parseInt(betInput.value||'0',10);
+    if(!pick){ diceResult.textContent='Hãy chọn Tài hoặc Xỉu nha!'; return; }
+    if(!(bet>0)){ diceResult.textContent='Nhập số bánh muốn cược nha!'; return; }
+    if(bet>wallet){ diceResult.textContent='Không đủ 🥮 để cược!'; return; }
+    diceResult.textContent='Đang tung...';
+    let t=0; const roll=setInterval(()=>{
+      d1.textContent=RI(1,6); d2.textContent=RI(1,6); d3.textContent=RI(1,6);
+      if(++t>14){ clearInterval(roll);
+        const a=RI(1,6), b=RI(1,6), c=RI(1,6); d1.textContent=a; d2.textContent=b; d3.textContent=c;
+        const s=a+b+c, kind=s>=11?'tai':'xiu';
+        if(kind===pick){ addWallet(bet); diceResult.textContent=`Bạn thắng! (${s} – ${kind.toUpperCase()}) +${bet} 🥮`; }
+        else { addWallet(-bet); diceResult.textContent=`Bạn thua 😭 (${s} – ${kind.toUpperCase()}) -${bet} 🥮`; }
+      }
+    },70);
+  };
+
+  // ===== Interactions
+  canvas.addEventListener('pointerdown', (e)=>{
+    if(state.scene==='intro'){
+      const d=Math.hypot(e.clientX-state.cake.x(), e.clientY-state.cake.y());
+      if(d < state.cake.r*1.1){ state.scene='main'; startAmbient(); }
+    } else {
+      // fireworks
+      popSound();
+      emitFirework(e.clientX, e.clientY, RI(40,70));
+    }
+  });
+
+  // ===== Fireworks particles
+  function emitFirework(x,y,n){
+    for(let i=0;i<n;i++){
+      const a=R(0,Math.PI*2), sp=R(1.2,4.2);
+      state.particles.push({
+        x,y, vx:Math.cos(a)*sp, vy:Math.sin(a)*sp-0.5,
+        life:1, r:R(1.3,2.6), h:RI(10,60)
+      });
+    }
+  }
+
+  // ===== Draw helpers
+  function sky(){
+    for(const s of state.stars){ const tw=.5+Math.sin(state.t*.001+s.seed)*.5; ctx.globalAlpha=.35+tw*.55; ctx.fillStyle='#fff'; ctx.beginPath(); ctx.arc(s.x,s.y,s.r*(.8+tw*.45),0,6.283); ctx.fill(); }
+    for(const f of state.fireflies){ f.a+=.01+f.s*.01; f.x+=Math.cos(f.a)*.35; f.y+=Math.sin(f.a*1.3)*.22; if(f.x<0)f.x=W(); if(f.x>W())f.x=0; if(f.y<0)f.y=H(); if(f.y>H())f.y=0; ctx.globalAlpha=.85; ctx.fillStyle='rgba(255,210,90,.9)'; ctx.shadowColor='rgba(255,210,90,.9)'; ctx.shadowBlur=8; ctx.beginPath(); ctx.arc(f.x,f.y,1.6+f.s*.8,0,6.283); ctx.fill(); ctx.shadowBlur=0; } ctx.globalAlpha=1;
+  }
+  function drawMoon(){
+    if(state.scene==='main' && state.moon.k<1) state.moon.k += 1/(60*state.moon.riseDur);
+    const m=state.moon; const x=m.x*W(); const y=(m.yStart*(1-m.k)+m.yEnd*m.k)*H();
+    const bright=.25+.75*m.k; const g=ctx.createRadialGradient(x,y,m.r*.2,x,y,m.r*1.35);
+    g.addColorStop(0,`rgba(255,230,130,${.65*bright})`); g.addColorStop(1,'rgba(255,230,130,0)');
+    ctx.save(); ctx.globalCompositeOperation='lighter'; ctx.fillStyle=g; ctx.beginPath(); ctx.arc(x,y,m.r*1.35,0,6.283); ctx.fill();
+    ctx.globalAlpha=Math.min(1,.85+.15*m.k); ctx.fillStyle='#ffe37a'; ctx.beginPath(); ctx.arc(x,y,m.r,0,6.283); ctx.fill();
+    ctx.globalAlpha=.22*bright; ctx.fillStyle='#fff'; ctx.beginPath(); ctx.ellipse(x-m.r*.18,y-m.r*.35,m.r*.07,m.r*.18,0,0,6.283); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(x-m.r*.06,y-m.r*.38,m.r*.06,m.r*.16,0,0,6.283); ctx.fill(); ctx.restore();
+  }
+  function rr(x,y,w,h,r){ r=Math.min(r,w/2,h/2); ctx.beginPath(); ctx.moveTo(x+r,y); ctx.arcTo(x+w,y,x+w,y+h,r); ctx.arcTo(x+w,y+h,x,y+h,r); ctx.arcTo(x,y+h,x,y,r); ctx.arcTo(x,y,x+w,y,r); ctx.fill(); }
+  function ground(){
+    const y=H()-state.ground.h; const grad=ctx.createLinearGradient(0,y,0,H()); grad.addColorStop(0,'#3a251c'); grad.addColorStop(1,'#1e130e');
+    ctx.fillStyle=grad; ctx.fillRect(0,y,W(),H()-y);
+    ctx.fillStyle='#24170f'; ctx.beginPath(); ctx.moveTo(0,y); for(let x=0;x<=W();x+=40){ const yy=y-8*Math.sin(x*.01)-5*Math.cos(x*.03); ctx.lineTo(x,yy);} ctx.lineTo(W(),H()); ctx.lineTo(0,H()); ctx.closePath(); ctx.fill();
+  }
+  function drawHouses(){
+    for(const h of state.houses){
+      // wall
+      ctx.fillStyle=h.wall; rr(h.x-h.w/2, h.y-h.h, h.w, h.h, 8);
+      // windows
+      ctx.fillStyle=h.win; const cols=RI(2,3), rows=RI(1,2), pad=8;
+      for(let i=0;i<cols;i++){ for(let j=0;j<rows;j++){
+        const ww=18, hh=14; const x=h.x - h.w/2 + pad + i*(ww+pad); const y=h.y - h.h + pad + j*(hh+pad);
+        rr(x,y,ww,hh,4);
+      }}
+      // roof
+      ctx.fillStyle=h.roof; ctx.beginPath(); ctx.moveTo(h.x-h.w/2-8, h.y-h.h); ctx.lineTo(h.x, h.y-h.h- RI(16,24)); ctx.lineTo(h.x+h.w/2+8, h.y-h.h); ctx.closePath(); ctx.fill();
+      // chimney smoke
+      if(h.smoke){
+        const cx=h.x+h.w/4, cy=h.y-h.h-6; ctx.fillStyle='rgba(255,255,255,.25)';
+        for(let k=0;k<3;k++){ ctx.beginPath(); ctx.arc(cx+Math.sin(state.t*0.001 + k)*6, cy- k*12 - (state.t*0.02 % 12), 6-k*1.5, 0, 6.283); ctx.fill(); }
+      }
+    }
+  }
+  function lantern(l){
+    l.life+=.016; const sway=Math.sin(l.life*2+l.off)*18*l.s; const x=l.x+sway, y=l.y; const w=22*l.s, h=30*l.s;
+    const gg=ctx.createRadialGradient(x,y,2,x,y,38*l.s); gg.addColorStop(0,'rgba(255,200,80,.6)'); gg.addColorStop(1,'rgba(255,200,80,0)'); ctx.fillStyle=gg; ctx.beginPath(); ctx.arc(x,y,38*l.s,0,6.283); ctx.fill();
+    const grd=ctx.createLinearGradient(0,y-h/2,0,y+h/2); grd.addColorStop(0,'#ffdb6e'); grd.addColorStop(.5,'#ffac54'); grd.addColorStop(1,'#ff8a3f'); ctx.fillStyle=grd; rr(x-w/2,y-h/2,w,h,6*l.s);
+    ctx.globalAlpha=.5; ctx.strokeStyle='rgba(0,0,0,.28)'; for(let i=-2;i<=2;i++){ ctx.beginPath(); ctx.moveTo(x-w/2+2,y+i*h/5); ctx.lineTo(x+w/2-2,y+i*h/5); ctx.stroke(); } ctx.globalAlpha=1;
+    ctx.strokeStyle='#ff9a4d'; ctx.lineWidth=2; ctx.beginPath(); ctx.moveTo(x,y+h/2); ctx.quadraticCurveTo(x+6,y+h/2+10,x,y+h/2+22); ctx.stroke();
+    // banner (sparse)
+    const bannerW = Math.min(340, 24*l.s + ctx.measureText(l.text).width + 28);
+    const bannerH = 26*l.s; const bx=x, by=y+h/2+38*l.s;
+    ctx.strokeStyle='#ffcf7a'; ctx.lineWidth=1.6; ctx.beginPath(); ctx.moveTo(x,y+h/2); ctx.quadraticCurveTo(x+10,y+h/2+18,bx,by-bannerH/2); ctx.stroke();
+    const bg=ctx.createLinearGradient(bx-bannerW/2,by,bx+bannerW/2,by); bg.addColorStop(0,'rgba(255,160,190,.9)'); bg.addColorStop(1,'rgba(255,120,170,.9)'); ctx.fillStyle=bg; rr(bx-bannerW/2,by-bannerH/2,bannerW,bannerH,12);
+    ctx.fillStyle='#fff'; ctx.font=`600 ${14*l.s+6}px "Segoe Script"`; ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillText(l.text,bx,by);
+  }
+  function kid(k){
+    k.step+=0.02*k.speed/36; if(k.glow>0) k.glow=Math.max(0,k.glow-0.02);
+    k.x+=k.dir*(k.speed*0.016);
+    if(k.dir>0 && k.x>W()+60) k.x=-60; if(k.dir<0 && k.x<-60) k.x=W()+60;
+    const bob=Math.sin(k.step*2)*3; const fx=k.x, fy=k.y-28+bob;
+    if(k.glow){ const gg=ctx.createRadialGradient(fx,fy,2,fx,fy,36); gg.addColorStop(0,'rgba(255,220,140,.7)'); gg.addColorStop(1,'rgba(255,220,140,0)'); ctx.fillStyle=gg; ctx.beginPath(); ctx.arc(fx,fy,36,0,6.283); ctx.fill(); }
+    ctx.fillStyle='#ffd1a4'; ctx.beginPath(); ctx.arc(fx,fy,10,0,6.283); ctx.fill();
+    ctx.fillStyle='#7be0ff'; ctx.fillRect(k.x-9,k.y-14+bob,18,22);
+    ctx.strokeStyle='#fff'; ctx.lineWidth=2; ctx.beginPath(); ctx.moveTo(k.x,k.y+8+bob); ctx.lineTo(k.x+6,k.y+24+bob); ctx.moveTo(k.x,k.y+8+bob); ctx.lineTo(k.x-6,k.y+24+bob); ctx.stroke();
+    ctx.strokeStyle='#fff'; ctx.beginPath(); ctx.moveTo(k.x+4,k.y-6+bob); ctx.lineTo(k.x+16,k.y+2+bob); ctx.stroke();
+    const Lx=k.x+18, Ly=k.y+4+bob; const grd=ctx.createLinearGradient(0,Ly-10,0,Ly+10); grd.addColorStop(0,'#ffe07a'); grd.addColorStop(1,'#ff914d'); ctx.fillStyle=grd; rr(Lx-6,Ly-8,12,16,4);
+  }
+  function lion(a){
+    a.t+=0.016; if(a.glow>0) a.glow=Math.max(0,a.glow-0.02);
+    a.x+=a.dir*(a.speed*0.016);
+    if((a.dir>0 && a.x>W()+160)||(a.dir<0 && a.x<-160)) a.remove=true;
+    const y=a.y-18+Math.sin(a.t*6)*3;
+    if(a.glow){ const gg=ctx.createRadialGradient(a.x,y,2,a.x,y,48); gg.addColorStop(0,'rgba(255,210,120,.7)'); gg.addColorStop(1,'rgba(255,210,120,0)'); ctx.fillStyle=gg; ctx.beginPath(); ctx.arc(a.x,y,48,0,6.283); ctx.fill(); }
+    ctx.save(); ctx.translate(a.x,y); ctx.scale(a.dir,1);
+    ctx.fillStyle='#ffcc66'; rr(-28,-16,56,32,10);       /* head */
+    ctx.fillStyle='#6b1b1b'; ctx.beginPath(); ctx.arc(-10,-4,3,0,6.283); ctx.arc(10,-4,3,0,6.283); ctx.fill();
+    ctx.strokeStyle='#6b1b1b'; ctx.lineWidth=2; ctx.beginPath(); ctx.moveTo(-8,6); ctx.lineTo(8,6); ctx.stroke();
+    ctx.fillStyle='#d94f3d'; rr(-48,16,96,18,8);         /* body */
+    ctx.strokeStyle='#d94f3d'; ctx.beginPath(); ctx.moveTo(48,24); ctx.quadraticCurveTo(64,16,72,22); ctx.stroke(); /* tail */
+    ctx.restore();
+  }
+  function drawParticles(){
+    state.particles = state.particles.filter(p=> (p.life-=0.02)>0);
+    for(const p of state.particles){ p.x+=p.vx; p.y+=p.vy; p.vy+=0.02; ctx.globalAlpha=p.life; ctx.fillStyle=`hsl(${p.h} 100% 60% / ${p.life})`; ctx.beginPath(); ctx.arc(p.x,p.y,p.r,0,6.283); ctx.fill(); }
+    ctx.globalAlpha=1;
+  }
+
+  // ===== Loop
+  function loop(){
+    state.t+=16;
+    ctx.clearRect(0,0,W(),H()); ctx.fillStyle=getComputedStyle(document.documentElement).getPropertyValue('--bg'); ctx.fillRect(0,0,W(),H());
+
+    if(state.scene==='intro'){
+      sky();
+      // mooncake in center
+      state.cake.pulse += 0.02; const k = (Math.sin(state.cake.pulse)*0.5+0.5)*0.12 + 1;
+      const x=state.cake.x(), y=state.cake.y(), r=state.cake.r*k;
+      const gg=ctx.createRadialGradient(x,y,10,x,y,r*1.3); gg.addColorStop(0,'rgba(255,210,120,.4)'); gg.addColorStop(1,'rgba(255,210,120,0)'); ctx.fillStyle=gg; ctx.beginPath(); ctx.arc(x,y,r*1.3,0,6.283); ctx.fill();
+      ctx.save(); ctx.translate(x,y); ctx.rotate(Math.sin(state.cake.pulse*0.6)*0.03); ctx.fillStyle='#ffbf75'; ctx.beginPath(); ctx.arc(0,0,r,0,6.283); ctx.fill(); ctx.fillStyle='#8b4513'; ctx.beginPath(); ctx.arc(0,0,r*0.86,0,6.283); ctx.fill(); ctx.fillStyle='#ffe9b3'; ctx.font='bold 22px Segoe Script'; ctx.textAlign='center'; ctx.fillText('🥮',0,8); ctx.restore();
+      ctx.fillStyle='var(--pink)'; ctx.shadowColor='var(--pink)'; ctx.shadowBlur=10; ctx.font='600 22px "Segoe Script"'; ctx.textAlign='center'; ctx.fillText('Nhấn vào bánh trung thu để bắt đầu 🎑', x, y + r + 40); ctx.shadowBlur=0;
+    } else {
+      // updates
+      for(const l of state.lanterns){ l.y+=l.vy*0.016; if(l.y<-80){ l.x=R(60,W()-60); l.y=H()-state.ground.h+R(8,18); l.vy=R(-26,-20)*l.s; l.text=LINES[RI(0,LINES.length-1)]; }}
+      state.lions = state.lions.filter(a=>!a.remove);
+
+      // render
+      sky(); drawMoon();
+      for(let i=0;i<state.lanterns.length;i++){ if(i%2===0) lantern(state.lanterns[i]); }
+      ground(); drawHouses(); for(const k of state.kids) kid(k); for(const a of state.lions) lion(a);
+      for(let i=0;i<state.lanterns.length;i++){ if(i%2===1) lantern(state.lanterns[i]); }
+      drawParticles();
+    }
+    requestAnimationFrame(loop);
+  }
+  loop();
+})();
+</script>
+</body>
+</html>
